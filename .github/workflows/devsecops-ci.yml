@@ -1,0 +1,207 @@
+name: DevSecOps Pipeline
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  run_iac_scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Run Trivy vulnerability scanner in fs mode
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          ignore-unfixed: true
+          format: 'json'
+          output: 'trivy_report.json'
+          severity: 'LOW,MEDIUM,CRITICAL,HIGH'
+      - name: Run Trivy vulnerability scanner in fs mode
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          ignore-unfixed: true
+          format: 'table'
+          output: 'trivy_report.txt'
+          severity: 'LOW,MEDIUM,CRITICAL,HIGH'
+
+      - name: Set up Trivy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget apt-transport-https gnupg lsb-release
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+          echo deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main | sudo tee -a /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install -y trivy
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: trivy-report
+          path: 'trivy_report.json'
+
+      - name: Check for Vulnerabilities
+        id: check_vulnerabilities
+        run: |
+          if grep -q '"Vulnerabilities":null' trivy_report.json; then
+            echo "no_vulnerabilities=true" >> $GITHUB_ENV
+          else
+            echo "no_vulnerabilities=false" >> $GITHUB_ENV
+          fi
+
+      - name: Add Trivy Findings to Summary
+        if: success() || failure()
+        run: |
+          echo '## Trivy Security Scan Results' >> $GITHUB_STEP_SUMMARY
+          if [ "$no_vulnerabilities" = "true" ]; then
+            echo 'No Vulnerabilities detected ✅' >> $GITHUB_STEP_SUMMARY
+          else
+            echo 'Vulnerabilities detected ❌' >> $GITHUB_STEP_SUMMARY
+            echo '<details>' >> $GITHUB_STEP_SUMMARY
+            echo '<summary>Table Report</summary>' >> $GITHUB_STEP_SUMMARY
+            echo '' >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            cat trivy_report.txt >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo '</details>' >> $GITHUB_STEP_SUMMARY
+            echo '<details>' >> $GITHUB_STEP_SUMMARY
+            echo '<summary>JSON Report</summary>' >> $GITHUB_STEP_SUMMARY
+            echo '' >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
+            cat trivy_report.json >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo '</details>' >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Run Trivy scan
+        run: trivy fs --exit-code 1 --ignore-unfixed --severity LOW,MEDIUM,HIGH,CRITICAL .
+  run_sast_scan:
+    runs-on: ubuntu-latest
+    container:
+      image: returntocorp/semgrep
+
+    steps:
+      - name: clone application source code
+        uses: actions/checkout@v3
+
+      - name: run semgrep
+        run: |
+          semgrep \
+            --sarif --output semgrep-report.sarif \
+            --metrics=off \
+            --config="p/default"
+          semgrep scan --error || exit 1
+
+      - name: save report as pipeline artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: semgrep-report
+          path: semgrep-report.sarif
+
+      - name: Download report
+        uses: actions/download-artifact@v2
+        with:
+          name: semgrep-report
+
+      - name: View Semgrep report
+        run: cat semgrep-report.sarif
+  run_sca_scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout Repository'
+        uses: actions/checkout@v4
+      - name: 'Dependency Review'
+        uses: actions/dependency-review-action@v4
+        with:
+          base-ref: 'main'
+          head-ref: 'devsecops'
+  run_dast_scan:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build Docker Image
+      run: |
+        docker build -t myapp:latest .
+
+    - name: Run Docker Container
+      run: docker run -d --name myapp -p 8080:8080 myapp:latest
+
+    - name: Check Docker container logs
+      run: docker logs myapp || true
+
+    - name: Test Container
+      run: timeout 300 bash -c 'while [[ "$(curl -s -o /dev/null -w ''%{http_code}'' localhost:8080)" != "200" ]]; do sleep 5; done' || false
+
+    - name: Test Container
+      run: |
+        if [ "$(docker inspect -f '{{.State.Running}}' myapp)" == "true" ]; then
+          curl -s http://localhost:8080 || exit 1
+        else
+          echo "Container is not running"
+          exit 1
+        fi
+
+    - name: Check running containers
+      run: docker ps
+
+    - name: Inspect Network Configuration
+      run: docker network inspect bridge
+
+    - name: Run Zap Owasp Scan
+      uses: zaproxy/action-full-scan@v0.10.0
+      with:
+        docker_name: 'zaproxy/zap-stable'
+        token: ${{ secrets.GITHUB_TOKEN }}
+        target: 'http://localhost:8080'
+
+    - name: Upload ZAP Report
+      uses: actions/upload-artifact@v3
+      with:
+        name: zap-report
+        path: zap-reports/zap_report.html
+
+    - name: Add ZAP Findings to Summary
+      if: success()
+      run: |
+        echo '## OWASP ZAP Security Scan Results' >> $GITHUB_STEP_SUMMARY
+        echo 'No Vulnerabilities detected ✅' >> $GITHUB_STEP_SUMMARY
+
+    - name: Add ZAP Findings to Summary
+      if: failure()
+      run: |
+        echo '## OWASP ZAP Security Scan Results' >> $GITHUB_STEP_SUMMARY
+        echo 'Vulnerabilities detected ❌' >> $GITHUB_STEP_SUMMARY
+        echo '<details>' >> $GITHUB_STEP_SUMMARY
+        echo '<summary>ZAP HTML Report</summary>' >> $GITHUB_STEP_SUMMARY
+        echo '' >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`html" >> $GITHUB_STEP_SUMMARY
+        cat zap-reports/zap_report.html >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        echo '</details>' >> $GITHUB_STEP_SUMMARY
+
+    - name: Stop and Remove Docker Container
+      run: |
+        docker stop myapp
+        docker rm myapp
+  run_secrets_scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
