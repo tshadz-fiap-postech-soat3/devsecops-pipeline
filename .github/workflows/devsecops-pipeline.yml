@@ -117,6 +117,8 @@ jobs:
     steps:
       - name: 'Checkout Repository'
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
       - name: 'Dependency Review'
         uses: actions/dependency-review-action@v4
         with:
