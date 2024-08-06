@@ -127,6 +127,17 @@ jobs:
   run_dast_scan:
     runs-on: ubuntu-latest
 
+    env:
+      DATABASE_URL: mysql://root:root@db:3306/healthmed-doctor
+      MYSQL_HOST: "db"
+      MYSQL_ROOT_PASSWORD: "root"
+      MYSQL_ROOT_USER: "root"
+      MYSQL_DATABASE: "healthmed-doctor"
+      MYSQL_USER: "user"
+      MYSQL_PASSWORD: "user"
+      MYSQL_PORT: 3306
+      IMAGE_NAME: "${{secrets.IMAGE_NAME}}"
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -134,27 +145,20 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    - name: Build Docker Image
+      - name: Install Docker Compose
       run: |
-        docker build -t myapp:latest .
-
-    - name: Run Docker Container
-      run: docker run -d --name myapp -p 8080:8080 myapp:latest
+        sudo curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+        sudo chmod +x /usr/local/bin/docker-compose
+        docker-compose --version
+    
+    - name: Build and run Docker Compose
+      run: docker-compose up --build -d
 
     - name: Check Docker container logs
-      run: docker logs myapp || true
+      run: docker logs ${{env.IMAGE_NAME}} || true
 
     - name: Test Container
       run: timeout 300 bash -c 'while [[ "$(curl -s -o /dev/null -w ''%{http_code}'' localhost:8080)" != "200" ]]; do sleep 5; done' || false
-
-    - name: Test Container
-      run: |
-        if [ "$(docker inspect -f '{{.State.Running}}' myapp)" == "true" ]; then
-          curl -s http://localhost:8080 || exit 1
-        else
-          echo "Container is not running"
-          exit 1
-        fi
 
     - name: Check running containers
       run: docker ps
@@ -168,12 +172,7 @@ jobs:
         docker_name: 'zaproxy/zap-stable'
         token: ${{ secrets.GITHUB_TOKEN }}
         target: 'http://localhost:8080'
-
-    - name: Upload ZAP Report
-      uses: actions/upload-artifact@v3
-      with:
-        name: zap-report
-        path: zap-reports/zap_report.html
+        fail_action: true
 
     - name: Add ZAP Findings to Summary
       if: success()
@@ -187,17 +186,11 @@ jobs:
         echo '## OWASP ZAP Security Scan Results' >> $GITHUB_STEP_SUMMARY
         echo 'Vulnerabilities detected ❌' >> $GITHUB_STEP_SUMMARY
         echo '<details>' >> $GITHUB_STEP_SUMMARY
-        echo '<summary>ZAP HTML Report</summary>' >> $GITHUB_STEP_SUMMARY
+        echo '<summary>ZAP Markdown Report</summary>' >> $GITHUB_STEP_SUMMARY
         echo '' >> $GITHUB_STEP_SUMMARY
-        echo "\`\`\`html" >> $GITHUB_STEP_SUMMARY
-        cat zap-reports/zap_report.html >> $GITHUB_STEP_SUMMARY
-        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        cat ./report_md.md >> $GITHUB_STEP_SUMMARY
         echo '</details>' >> $GITHUB_STEP_SUMMARY
 
-    - name: Stop and Remove Docker Container
-      run: |
-        docker stop myapp
-        docker rm myapp
   run_secrets_scan:
     runs-on: ubuntu-latest
     steps:
