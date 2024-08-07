@@ -131,12 +131,12 @@ jobs:
       MYSQL_HOST: "db"
       MYSQL_ROOT_PASSWORD: "root"
       MYSQL_ROOT_USER: "root"
-      MYSQL_DATABASE: $IMAGE_NAME
+      MYSQL_DATABASE: "${{secrets.IMAGE_NAME}}"
       MYSQL_USER: "user"
       MYSQL_PASSWORD: "user"
       MYSQL_PORT: 3306
       IMAGE_NAME: "${{secrets.IMAGE_NAME}}"
-      DATABASE_URL: mysql://root:root@db:3306/$IMAGE_NAME
+      DATABASE_URL: mysql://root:root@db:3306/"${{secrets.IMAGE_NAME}}"
 
     steps:
     - name: Checkout code
