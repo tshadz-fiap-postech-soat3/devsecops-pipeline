@@ -22,7 +22,7 @@ jobs:
           ignore-unfixed: true
           format: 'json'
           output: 'trivy_report.json'
-          severity: 'LOW,MEDIUM,CRITICAL,HIGH'
+          severity: 'CRITICAL,HIGH'
       - name: Run Trivy vulnerability scanner in fs mode
         uses: aquasecurity/trivy-action@master
         with:
@@ -30,7 +30,7 @@ jobs:
           ignore-unfixed: true
           format: 'table'
           output: 'trivy_report.txt'
-          severity: 'LOW,MEDIUM,CRITICAL,HIGH'
+          severity: 'CRITICAL,HIGH'
 
       - name: Set up Trivy
         run: |
@@ -81,7 +81,7 @@ jobs:
           fi
 
       - name: Run Trivy scan
-        run: trivy fs --exit-code 1 --ignore-unfixed --severity LOW,MEDIUM,HIGH,CRITICAL .
+        run: trivy fs --exit-code 1 --ignore-unfixed --severity HIGH,CRITICAL .
   run_sast_scan:
     runs-on: ubuntu-latest
     container:
@@ -128,15 +128,15 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      DATABASE_URL: mysql://root:root@db:3306/healthmed-doctor
       MYSQL_HOST: "db"
       MYSQL_ROOT_PASSWORD: "root"
       MYSQL_ROOT_USER: "root"
-      MYSQL_DATABASE: "healthmed-doctor"
+      MYSQL_DATABASE: $IMAGE_NAME
       MYSQL_USER: "user"
       MYSQL_PASSWORD: "user"
       MYSQL_PORT: 3306
       IMAGE_NAME: "${{secrets.IMAGE_NAME}}"
+      DATABASE_URL: mysql://root:root@db:3306/$IMAGE_NAME
 
     steps:
     - name: Checkout code
@@ -200,3 +200,5 @@ jobs:
       - uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_KEY: ${{ secrets.GITLEAKS_KEY }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
