@@ -131,11 +131,11 @@ jobs:
       MYSQL_HOST: "db"
       MYSQL_ROOT_PASSWORD: "root"
       MYSQL_ROOT_USER: "root"
-      MYSQL_DATABASE: "${{secrets.IMAGE_NAME}}"
+      MYSQL_DATABASE: ${{secrets.IMAGE_NAME}}
       MYSQL_USER: "user"
       MYSQL_PASSWORD: "user"
       MYSQL_PORT: 3306
-      IMAGE_NAME: "${{secrets.IMAGE_NAME}}"
+      IMAGE_NAME: ${{secrets.IMAGE_NAME}}
       DATABASE_URL: mysql://root:root@db:3306/${{secrets.IMAGE_NAME}}
 
     steps:
@@ -155,7 +155,9 @@ jobs:
       run: docker-compose up --build -d
 
     - name: Check Docker container logs
-      run: docker logs ${{env.IMAGE_NAME}} || true
+      run: | 
+        docker logs ${{env.IMAGE_NAME}} || true
+        docker ps
 
     - name: Test Container
       run: timeout 300 bash -c 'while [[ "$(curl -s -o /dev/null -w ''%{http_code}'' localhost:8080)" != "200" ]]; do sleep 5; done' || false
