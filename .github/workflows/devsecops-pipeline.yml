@@ -136,7 +136,7 @@ jobs:
       MYSQL_PASSWORD: "user"
       MYSQL_PORT: 3306
       IMAGE_NAME: "${{secrets.IMAGE_NAME}}"
-      DATABASE_URL: mysql://root:root@db:3306/"${{secrets.IMAGE_NAME}}"
+      DATABASE_URL: mysql://root:root@db:3306/${{secrets.IMAGE_NAME}}
 
     steps:
     - name: Checkout code
